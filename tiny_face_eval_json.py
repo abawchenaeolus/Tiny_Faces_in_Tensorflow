@@ -87,11 +87,11 @@ def evaluate(weight_file_path, input_filename, output_dir, prob_thresh=0.5, nms_
   # Find image files in data_dir.
   with open(input_filename, 'r') as f:
     data = json.load(f)
-  """
-  filenames = []
-  for ext in ('*.png', '*.gif', '*.jpg', '*.jpeg'):
-    filenames.extend(glob.glob(os.path.join(data_dir, ext)))
-  """
+
+  image_ids_filename = os.path.join(output_dir, 'image_ids.txt')
+  with open(image_ids_filename, 'r') as f:
+    image_ids = f.read().splitlines()
+  print(image_ids)
   # Load an average image and clusters(reference boxes of templates).
   with open(weight_file_path, "rb") as f:
     _, mat_params_dict = pickle.load(f)
@@ -106,10 +106,17 @@ def evaluate(weight_file_path, input_filename, output_dir, prob_thresh=0.5, nms_
   with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-    for image in data['dataset']:
+    results = []
+    for image in data['dataset'][:10]:
+
+      if image['image']['image_id'] in image_ids:
+        continue
+
       filename = image['image']['filepath']
+      # print(filename)
       fname = filename.split(os.sep)[-1]
       raw_img = cv2.imread(filename)
+      # print(raw_img.shape)
       raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
       raw_img_f = raw_img.astype(np.float32)
 
@@ -132,7 +139,7 @@ def evaluate(weight_file_path, input_filename, output_dir, prob_thresh=0.5, nms_
 
       # process input at different scales
       for s in scales:
-        print("Processing {} at scale {:.4f}".format(fname, s))
+        # print("Processing {} at scale {:.4f}".format(fname, s))
         img = cv2.resize(raw_img_f, (0, 0), fx=s, fy=s, interpolation=cv2.INTER_LINEAR)
         img = img - average_image
         img = img[np.newaxis, :]
@@ -195,14 +202,27 @@ def evaluate(weight_file_path, input_filename, output_dir, prob_thresh=0.5, nms_
       refined_bboxes = bboxes[refind_idx]
       annotations = []
       for bbox in refined_bboxes:
+        bbox = [int(v) for v in bbox]
         annotations.append({
             'label': 'human face',
-            'x': bbox[0],
-            'y': bbox[1],
-            'w': bbox[2] - bbox[0],
-            'h': bbox[3] - bbox[1]
+            'bbox': [
+                bbox[0],
+                bbox[1],
+                bbox[2] - bbox[0],
+                bbox[3] - bbox[1]
+            ]
         })
-      # print(annotations)
+      results.append({
+        "image": {
+          "image_id": image['image']['image_id']
+        },
+        "annotation": annotations
+      })
+      with open(image_ids_filename, 'a') as f:
+        f.write(image['image']['image_id'] + '\n')
+
+
+      """
       overlay_bounding_boxes(raw_img, refined_bboxes, lw)
 
       if display:
@@ -213,7 +233,9 @@ def evaluate(weight_file_path, input_filename, output_dir, prob_thresh=0.5, nms_
       # save image with bounding boxes
       raw_img = cv2.cvtColor(raw_img, cv2.COLOR_RGB2BGR)
       cv2.imwrite(os.path.join(output_dir, fname), raw_img)
-
+      """
+    with open(os.path.join(output_dir, 'results.json'), 'w') as f:
+      json.dump(results, f, indent=2)
 
 def main():
 
